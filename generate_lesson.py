@@ -132,16 +132,26 @@ DATA = [{'title': 'Ваш Кристалл\nнезабываемости',
            'с кем не говорит.\n'
            'Вот такую женщину уже невозможно поместить в одну категорию.'}]
 
+PHOTO_PROMPTS = {
+    1: 'Luxury editorial portrait of a confident woman aged 42, black silk, natural skin, graphite interior, soft champagne rim light, refined quiet presence, no text --ar 16:9 --style raw',
+    4: 'Elegant mature couple sharing a warm knowing glance in a quiet luxury lounge, authentic emotion, graphite and champagne palette, cinematic soft light, no text --ar 16:9 --style raw',
+    8: 'Two crystal glasses on a dark stone table after an intimate conversation, delicate golden light reflections lingering on graphite silk, poetic luxury still life, no text --ar 16:9 --style raw',
+    12: 'A clear multifaceted crystal casting layered champagne light onto matte graphite stone, rich subtle reflections, sculptural luxury still life, editorial photography, no text --ar 16:9 --style raw',
+}
+for number,prompt in PHOTO_PROMPTS.items():
+    DATA[number-1]['photo_prompt']=prompt
+
 import argparse
 from pathlib import Path
 import subprocess
 import hashlib
 import urllib.request
+import re
 
 from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
-from pptx.enum.shapes import MSO_SHAPE
+from pptx.enum.shapes import MSO_SHAPE, MSO_CONNECTOR
 from pptx.oxml.xmlchemy import OxmlElement
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
@@ -213,19 +223,62 @@ class Renderer:
         self.pdf.setStrokeColorRGB(*pdf_color(GOLD));self.pdf.setLineWidth(.75)
         self.pdf.rect(X+(.5 if quote else 0),PAGE_H-y-height,WIDTH-(1 if quote else 0),height,fill=1,stroke=int(quote))
 
+    def hairline(self,x1,y1,x2,y2,alpha=.20,width=.5):
+        sh=self.slide.shapes.add_connector(MSO_CONNECTOR.STRAIGHT,Pt(x1),Pt(y1),Pt(x2),Pt(y2))
+        sh.line.color.rgb=rgb(GOLD);sh.line.width=Pt(width)
+        solid=sh.line._get_or_add_ln().find('{http://schemas.openxmlformats.org/drawingml/2006/main}solidFill')
+        opacity=OxmlElement('a:alpha');opacity.set('val',str(int(alpha*100000)))
+        solid[0].append(opacity)
+        self.pdf.saveState();self.pdf.setStrokeAlpha(alpha)
+        self.pdf.setStrokeColorRGB(*pdf_color(GOLD));self.pdf.setLineWidth(width)
+        self.pdf.line(x1,PAGE_H-y1,x2,PAGE_H-y2);self.pdf.restoreState()
+
+    def texture(self):
+        # Delicate crystal facets ONLY to the right of the reserved video area.
+        vertices=[(835,430),(901,400),(946,446),(928,511),(866,531),(821,484)]
+        for a,b in zip(vertices,vertices[1:]+vertices[:1]):self.hairline(*a,*b,alpha=.10,width=.35)
+        for i,j in [(0,2),(0,4),(1,3),(2,5),(3,5)]:
+            self.hairline(*vertices[i],*vertices[j],alpha=.08,width=.3)
+        for coords in [(627,10,943,31),(739,10,943,67),(698,10,943,47)]:
+            self.hairline(*coords,alpha=.08,width=.3)
+
+    def diamond(self,y):
+        size=4
+        sh=self.slide.shapes.add_shape(MSO_SHAPE.DIAMOND,Pt(X+12),Pt(y),Pt(size),Pt(size))
+        sh.fill.solid();sh.fill.fore_color.rgb=rgb(GOLD);sh.line.fill.background()
+        path=self.pdf.beginPath();xx=X+14;yy=PAGE_H-y-2
+        path.moveTo(xx,yy+2);path.lineTo(xx+2,yy);path.lineTo(xx,yy-2);path.lineTo(xx-2,yy);path.close()
+        self.pdf.setFillColorRGB(*pdf_color(GOLD));self.pdf.drawPath(path,fill=1,stroke=0)
+
     def text(self,lines,y,size=18,face='Arial',color=WHITE,padding=2):
         leading=size*1.24
         box=self.slide.shapes.add_textbox(Inches(4.5),Inches(y/72), Inches(8.0), Inches((len(lines)*leading+8)/72))
         tf=box.text_frame;tf.word_wrap=False
         tf.margin_left=tf.margin_right=Pt(padding);tf.margin_top=tf.margin_bottom=Pt(0)
+        asc=pdfmetrics.getAscent(face)*size/1000
+        pattern=r'(\b(?:незабываемая|незабываемые|следы|след|комбинацией|лёгкость|память|уважение|вдохновение|уникальности)\b)'
         for i,value in enumerate(lines):
             p=tf.paragraphs[0] if i==0 else tf.add_paragraph()
-            p.text=value;p.font.name='Georgia' if face.startswith('Georgia') else 'Arial'
+            p.font.name='Georgia' if face.startswith('Georgia') else 'Arial'
             p.font.italic=face=='GeorgiaItalic';p.font.size=Pt(size);p.font.color.rgb=rgb(color)
             p.space_before=p.space_after=Pt(0);p.line_spacing=Pt(leading)
-        self.pdf.setFont(face,size);self.pdf.setFillColorRGB(*pdf_color(color))
-        asc=pdfmetrics.getAscent(face)*size/1000
-        for i,value in enumerate(lines):self.pdf.drawString(X+padding,PAGE_H-y-asc-i*leading,value)
+            parts=re.split(pattern,value,flags=re.I) if color==WHITE and face=='Arial' else [value]
+            xx=X+padding
+            for part in parts:
+                if not part:continue
+                fill=GOLD if re.fullmatch(pattern,part,flags=re.I) else color
+                run=p.add_run();run.text=part;run.font.color.rgb=rgb(fill)
+                self.pdf.setFont(face,size);self.pdf.setFillColorRGB(*pdf_color(fill))
+                self.pdf.drawString(xx,PAGE_H-y-asc-i*leading,part)
+                xx+=pdfmetrics.stringWidth(part,face,size)
+
+    def photo_prompt(self,y,prompt):
+        lines=wrap(prompt,'Arial',16,WIDTH-28)
+        height=58+len(lines)*16*1.24
+        assert y+height<=524,('Photo prompt overflows',y,height)
+        self.rectangle(y,height,quote=True)
+        self.text(['ПРОМПТ ДЛЯ MIDJOURNEY'],y+12,16,color=GOLD,padding=14)
+        self.text(lines,y+43,16,padding=14)
 
     def table_row(self,y,left,right):
         self.rectangle(y,57)
@@ -237,6 +290,7 @@ class Renderer:
         p._p.get_or_add_pPr().append(tabs)
         for value,c in [(left+'\t',GOLD),('→ '+right,WHITE)]:
             run=p.add_run();run.text=value;run.font.name='Arial';run.font.size=Pt(18);run.font.color.rgb=rgb(c)
+        self.hairline(X+200,y+12,X+200,y+45,alpha=.35)
         for xx,value,c in [(X+14,left,GOLD),(X+14+2.95*72,'→ '+right,WHITE)]:
             assert xx+pdfmetrics.stringWidth(value,'Arial',18)<=X+WIDTH-14
             self.pdf.setFont('Arial',18);self.pdf.setFillColorRGB(*pdf_color(c))
@@ -248,16 +302,19 @@ class Renderer:
         self.slide=self.prs.slides.add_slide(self.prs.slide_layouts[6])
         self.slide.background.fill.solid();self.slide.background.fill.fore_color.rgb=rgb(BG)
         self.pdf.setFillColorRGB(*pdf_color(BG));self.pdf.rect(0,0,PAGE_W,PAGE_H,fill=1,stroke=0)
+        self.texture()
         title=wrap(data['title'],'Georgia',34,WIDTH-4)
         assert len(title)<=2
         self.text(title,36,34,'Georgia',GOLD)
         y=max(145,36+len(title)*34*1.24+24)
         for card in data.get('cards',[]):
-            lines=wrap(card,'Arial',18,WIDTH-28)
+            lines=wrap(card,'Arial',18,WIDTH-48)
             height=len(lines)*18*1.24+24
             assert len(lines)<=3,'Split into another teaching slide instead of reducing font size.'
             self.rectangle(y,height)
-            self.text(lines,y+11,18,color=GOLD if data.get('accent_all') else WHITE,padding=14)
+            self.hairline(X+1.5,y+8,X+1.5,y+height-8,alpha=.38,width=.5)
+            self.diamond(y+17)
+            self.text(lines,y+11,18,color=GOLD if data.get('accent_all') else WHITE,padding=24)
             y+=height+10
         for left,right in data.get('table',[]):
             self.table_row(y,left,right);y+=67
@@ -269,7 +326,8 @@ class Renderer:
             self.text(lines,y+11,18,'GeorgiaItalic',GOLD,14)
             y+=height
         assert y<=490,(index,y,'Split content; never shrink fonts.')
-        self.text([f'{index:02d} / {total:02d}'],510,16)
+        if data.get('photo_prompt'):
+            self.photo_prompt(max(352,y+16),data['photo_prompt'])
         self.slide.notes_slide.notes_text_frame.text=data['notes']
         self.pdf.showPage()
 
@@ -286,6 +344,8 @@ def validate(output):
     for slide,data in zip(prs.slides,DATA):
         assert slide.notes_slide.notes_text_frame.text==data['notes']
         for shape in slide.shapes:
+            if shape.has_text_frame:
+                assert not re.fullmatch(r'\d{2} / \d{2}',shape.text.strip()), 'Page numbering must be disabled'
             assert shape.left>=Inches(4.5)
             if shape.has_text_frame and shape.text:
                 assert shape.width==Inches(8.0)
@@ -299,14 +359,14 @@ def validate(output):
     for page in document:
         pix=page.get_pixmap(matrix=fitz.Matrix(1,1),clip=fitz.Rect(0,0,X,PAGE_H),alpha=False)
         assert pix.samples==bytes(BG)*(pix.width*pix.height),'Speaker area must be perfectly blank.'
-    print(f'Validated {len(DATA)} slides: exact dimensions, fonts, synchronized Notes, blank 4.5-inch speaker area.')
+    print(f'Validated {len(DATA)} slides: no numbering, correct fonts, synchronized Notes, blank 4.5-inch speaker area, subtle right-side graphics.')
 
 def push(output):
     names=[NAME+'.pptx',NAME+'.pdf','generate_lesson.py','requirements-lesson.txt']
     subprocess.run(['git','add','--',*names],cwd=output,check=True)
     changed=subprocess.run(['git','diff','--cached','--quiet'],cwd=output)
     if changed.returncode==1:
-        subprocess.run(['git','commit','-m','Create premium 16-slide teaching lesson with synchronized narration'],cwd=output,check=True)
+        subprocess.run(['git','commit','-m','Add subtle crystal graphics and Midjourney prompt containers; remove slide numbering'],cwd=output,check=True)
     elif changed.returncode!=0:raise RuntimeError('Cannot inspect staged files')
     subprocess.run(['git','push','origin','HEAD:main'],cwd=output,check=True)
     local=subprocess.check_output(['git','rev-parse','HEAD'],cwd=output,text=True).strip()
