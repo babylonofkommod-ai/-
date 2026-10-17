@@ -2,3 +2,5 @@ python-pptx>=1.0.2
 reportlab>=4.2
 PyMuPDF>=1.24
 fonttools>=4.53
+requests>=2.32
+Pillow>=10
