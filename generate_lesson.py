@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline text-only premium lesson generator. No image generation or image search.
+"""Offline premium lesson generator with adaptive vector infographics. No image APIs or search.
 
 python -m pip install -r requirements-lesson.txt
 python generate_lesson.py --fonts-dir /path/to/fonts
@@ -17,7 +17,8 @@ import subprocess
 from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
-from pptx.enum.shapes import MSO_SHAPE
+from pptx.enum.shapes import MSO_SHAPE, MSO_CONNECTOR
+from pptx.oxml.xmlchemy import OxmlElement
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
@@ -127,7 +128,7 @@ def paginate(content,max_slides):
             fragments=narration_fragments(paragraph) if len(paragraph)>420 else [paragraph]
             for fragment in fragments:
                 notes='\n'.join(prefix+[fragment]);prefix=[]
-                quote=any(word in fragment for word in ('А есть незабываемые.','«хорошая женщина»','Чем больше раскрытых граней','Вот такую женщину'))
+                quote=any(word in fragment for word in ('А есть незабываемые.','«хорошая женщина»','Чем больше раскрытых граней','Вот такую женщину','Он запоминает себя рядом с вами.','Она создаётся комбинацией.','Но это один след.'))
                 units.append(Unit(caption(fragment),notes,quote))
         if prefix:
             if units:units[-1].notes+='\n'+'\n'.join(prefix)
@@ -157,9 +158,37 @@ def paginate(content,max_slides):
     return slides
 
 
+def infer_layout(lesson):
+    speech=lesson.notes
+    # Meaning determines the scheme; slide numbers and page positions are irrelevant.
+    if 'ГРАНЬ → СОПРИКОСНОВЕНИЕ' in speech:
+        return 'chain',['ГРАНЬ','СОПРИКОСНОВЕНИЕ','СЛЕД','ПАМЯТЬ','НЕЗАБЫВАЕМОСТЬ']
+    pairs=[]
+    for paragraph in speech.splitlines():
+        if '→' in paragraph:
+            pairs.extend([(a.strip(),b.strip()) for a,b in re.findall(r'([^,→]+?)\s*→\s*([^,→]+)',paragraph)])
+    if pairs:return 'relations',pairs[:4]
+    if 'Проходит несколько дней.' in speech and 'Так появляется память о вас.' in speech:
+        return 'chain',['Мужчина вспоминает вас','возвращается это ощущение','появляется память о вас']
+    contrasts=re.findall(r'(?:она\s+)?([^.!?,:]+?),\s*но\s+([^.!?]+)',speech,re.I)
+    if len(contrasts)>=2:
+        return 'comparison',(['\n'.join(a.strip() for a,b in contrasts),'\n'.join(b.strip() for a,b in contrasts)])
+    if 'И наоборот:' in speech:
+        return 'comparison',['потрясающая женщина —\nкрасивая, умная, успешная','сначала интерес,\nпотом привыкание,\nпотом охлаждение.']
+    if 'Он может забыть' in speech and 'как ему было рядом с вами' in speech:
+        return 'comparison',['Он может забыть ресторан.\nОн может даже забыть какие-то ваши слова.','как ему было рядом с вами.']
+    if 'Есть красивые женщины.' in speech and 'А есть незабываемые.' in speech:
+        return 'comparison',['Есть красивые женщины.\nЕсть умные.\nЕсть сексуальные.\nЕсть интересные.','А есть незабываемые.']
+    if all(word in speech for word in ('сначала интерес','потом привыкание','потом охлаждение')):
+        return 'chain',['интерес','привыкание','охлаждение']
+    if len(lesson.units)==3 and not any(u.quote for u in lesson.units):
+        return 'tiles',[u.thesis for u in lesson.units]
+    return 'list',None
+
+
 class Deck:
     def __init__(self,output):
-        self.output=output;self.prs=Presentation()
+        self.output=output;self.prs=Presentation();self.layouts=[]
         self.prs.slide_width=Inches(13.333);self.prs.slide_height=Inches(7.5)
         self.prs.core_properties.title=NAME;self.prs.core_properties.language='ru-RU'
         # Remove slide-number fields from every master and layout as well.
@@ -193,30 +222,125 @@ class Deck:
                 run=p.add_run();run.text=part;run.font.color.rgb=color(shade)
                 self.pdf.setFont(font,size);self.pdf.setFillColorRGB(*pdf_color(shade))
                 self.pdf.drawString(xx,PAGE_H-y-asc-i*size*1.24,part);xx+=pdfmetrics.stringWidth(part,font,size)
+    def connector(self,x1,y1,x2,y2,arrow=True):
+        shape=self.slide.shapes.add_connector(MSO_CONNECTOR.STRAIGHT,Pt(x1),Pt(y1),Pt(x2),Pt(y2))
+        shape.name='Logical connector';shape.line.color.rgb=color(GOLD);shape.line.width=Pt(.8)
+        if arrow:
+            end=OxmlElement('a:tailEnd');end.set('type','triangle');shape.line._get_or_add_ln().append(end)
+        self.pdf.setStrokeColorRGB(*pdf_color(GOLD));self.pdf.setLineWidth(.8)
+        self.pdf.line(x1,PAGE_H-y1,x2,PAGE_H-y2)
+        if arrow:
+            import math
+            angle=math.atan2(y2-y1,x2-x1);length=5;spread=2.1
+            ex=x2-length*math.cos(angle);ey=y2-length*math.sin(angle)
+            path=self.pdf.beginPath();path.moveTo(x2,PAGE_H-y2)
+            path.lineTo(ex-spread*math.sin(angle),PAGE_H-ey-spread*math.cos(angle))
+            path.lineTo(ex+spread*math.sin(angle),PAGE_H-ey+spread*math.cos(angle));path.close()
+            self.pdf.setFillColorRGB(*pdf_color(GOLD));self.pdf.drawPath(path,fill=1,stroke=0)
+    def diamond(self,x,y):
+        shape=self.slide.shapes.add_shape(MSO_SHAPE.DIAMOND,Pt(x),Pt(y),Pt(5),Pt(5));shape.name='Gold diamond marker'
+        shape.fill.solid();shape.fill.fore_color.rgb=color(GOLD);shape.line.fill.background()
+        path=self.pdf.beginPath();path.moveTo(x+2.5,PAGE_H-y);path.lineTo(x+5,PAGE_H-y-2.5)
+        path.lineTo(x+2.5,PAGE_H-y-5);path.lineTo(x,PAGE_H-y-2.5);path.close()
+        self.pdf.setFillColorRGB(*pdf_color(GOLD));self.pdf.drawPath(path,fill=1,stroke=0)
+    def panel(self,x,y,w,h,name='Diagram card'):
+        shape=self.box(x,y,w,h,CARD,name=name)
+        self.box(x+.5,y+.5,w-1,h-1,CARD,GOLD,'Inset gold outline')
+        self.blocks.append((x,y,w,h,name))
+        return shape
+    def quotation(self,unit,y):
+        rows=wrap(unit.thesis,'GeorgiaItalic',18,COLUMN-50);height=len(rows)*22.32+28
+        self.box(LEFT+.5,y,COLUMN-1,height,BG,GOLD,'Quote')
+        self.blocks.append((LEFT+.5,y,COLUMN-1,height,'Quote'))
+        self.connector(LEFT+12,y+12,LEFT+12,y+height-12,False)
+        self.text(rows,LEFT,y+12,COLUMN,18,'GeorgiaItalic',GOLD,26)
+        return height
     def page(self,lesson):
         self.slide=self.prs.slides.add_slide(self.prs.slide_layouts[6]);self.slide.background.fill.solid();self.slide.background.fill.fore_color.rgb=color(BG)
-        self.slide._element.set('showMasterSp','0')
+        self.slide._element.set('showMasterSp','0');self.blocks=[]
         self.pdf.setFillColorRGB(*pdf_color(BG));self.pdf.rect(0,0,PAGE_W,PAGE_H,fill=1,stroke=0)
         title=wrap(lesson.title,'Georgia',32,COLUMN-4)
         if len(title)>2:raise ValueError('Shorten this topic heading: '+lesson.title)
         self.text(title,LEFT,24,COLUMN,32,'Georgia',GOLD,2)
+        mode,data=infer_layout(lesson);self.layouts.append(mode)
+        inline_quote=next((u for u in lesson.units if u.quote and mode=='comparison' and u.thesis==data[1]),None)
+        quotes=[u for u in lesson.units if u.quote and u is not inline_quote]
         cards=[u for u in lesson.units if not u.quote]
-        quotes=[u for u in lesson.units if u.quote]
-        def height_of(unit):
-            return len(wrap(unit.thesis,'GeorgiaItalic' if unit.quote else 'Arial',18,COLUMN-28))*22.32+26
-        quote_height=sum(height_of(u)+10 for u in quotes)-10 if quotes else 0
-        quote_top=TEXT_BOTTOM-quote_height
-        y=TEXT_TOP
-        for unit in cards+quotes:
-            if unit.quote:y=max(y,quote_top)
-            font='GeorgiaItalic' if unit.quote else 'Arial';rows=wrap(unit.thesis,font,18,COLUMN-28);height=height_of(unit)
-            panel=self.box(LEFT,y,COLUMN,height,BG if unit.quote else CARD,name='Quote' if unit.quote else 'Teaching card')
-            panel.left=Inches(4.5);panel.width=Inches(8.3)
-            self.box(LEFT+.5,y+.5,COLUMN-1,height-1,BG if unit.quote else CARD,GOLD,'Inset gold outline')
-            self.text(rows,LEFT,y+11,COLUMN,18,font,GOLD if unit.quote else WHITE,14)
-            if not unit.quote and quotes:assert y+height+10<=quote_top, 'Card would overlap its lower quotation.'
-            y+=height+10
-        assert y-10<=TEXT_BOTTOM
+        quote_heights=[len(wrap(u.thesis,'GeorgiaItalic',18,COLUMN-50))*22.32+28 for u in quotes]
+        quote_space=sum(quote_heights)+max(0,len(quotes)-1)*10
+        quote_top=TEXT_BOTTOM-quote_space
+        content_bottom=quote_top-18 if quotes else TEXT_BOTTOM
+        if mode=='comparison':
+            gap=38;w=(COLUMN-gap)/2;y=145
+            texts=data
+            # Duplicate wording remains only in the lower quote, not both columns and quote.
+            h=min(250,content_bottom-y)
+            for index,value in enumerate(texts):
+                x=LEFT+index*(w+gap)
+                face='GeorgiaItalic' if index==1 and inline_quote else 'Arial'
+                rows=wrap(value,face,18,w-40)
+                required=len(rows)*22.32+36
+                assert required<=h,('Comparison requires an additional slide',required,h)
+                self.panel(x,y,w,h,'Comparison card')
+                self.text(rows,x,y+24,w,18,face,GOLD if face=='GeorgiaItalic' else WHITE,padding=20)
+                if face=='GeorgiaItalic':self.connector(x+10,y+20,x+10,y+h-20,False)
+            self.connector(LEFT+w+5,y+h/2,LEFT+w+gap-5,y+h/2)
+        elif mode=='chain':
+            # Responsive horizontal chain: long five-step formulas wrap to a second row.
+            groups=[data] if len(data)<=3 else [data[:3],data[3:]]
+            previous=None
+            for row_index,group in enumerate(groups):
+                widths=[max(90,pdfmetrics.stringWidth(label,'Arial',16)+24) for label in group] if all(label==label.upper() for label in group) else [(COLUMN-20*(len(group)-1))/len(group)]*len(group)
+                assert sum(widths)+20*(len(group)-1)<=COLUMN
+                x=LEFT+(COLUMN-sum(widths)-20*(len(group)-1))/2;y=155+row_index*133
+                positions=[]
+                for label,w in zip(group,widths):
+                    rows=wrap(label,'Arial',16,w-24)
+                    assert len(rows)<=3
+                    self.panel(x,y,w,76,'Chain node');self.text(rows,x,y+(76-(len(rows)*19.84))/2,w,16,fill=GOLD,padding=12)
+                    positions.append((x,w));x+=w+20
+                for (x1,w1),(x2,w2) in zip(positions,positions[1:]):self.connector(x1+w1+3,y+38,x2-3,y+38)
+                if previous:
+                    px,pw,py=previous;endx=positions[0][0]+positions[0][1]/2;mid=py+103
+                    self.connector(px+pw/2,py+76,px+pw/2,mid,False)
+                    self.connector(px+pw/2,mid,endx,mid,False);self.connector(endx,mid,endx,y)
+                previous=(positions[-1][0],positions[-1][1],y)
+        elif mode=='tiles':
+            gap=16;w=(COLUMN-2*gap)/3;y=145
+            wrapped=[wrap(value,'Arial',18,w-40) for value in data]
+            h=max(len(rows)*22.32+44 for rows in wrapped)
+            assert y+h<=content_bottom
+            for index,rows in enumerate(wrapped):
+                x=LEFT+index*(w+gap);self.panel(x,y,w,h,'Thesis tile')
+                for row_index in range(len(rows)):self.diamond(x+12,y+25+row_index*22.32)
+                self.text(rows,x,y+18,w,18,padding=26)
+        elif mode=='relations':
+            y=145
+            for left,right in data:
+                self.panel(LEFT,y,COLUMN,57,'Relation row')
+                self.diamond(LEFT+14,y+25)
+                self.text(wrap(left,'Arial',18,210),LEFT+30,y+17,230,18,fill=GOLD)
+                self.connector(LEFT+238,y+29,LEFT+282,y+29)
+                self.text(wrap(right,'Arial',18,COLUMN-320),LEFT+305,y+17,COLUMN-315,18)
+                y+=69
+            assert y-12<=content_bottom
+        else:
+            y=TEXT_TOP
+            for unit in cards:
+                rows=wrap(unit.thesis,'Arial',18,COLUMN-54);height=len(rows)*22.32+28
+                assert y+height<=content_bottom
+                panel=self.panel(LEFT,y,COLUMN,height,'Teaching card');panel.left=Inches(4.5);panel.width=Inches(8.3)
+                for row_index in range(len(rows)):self.diamond(LEFT+15,y+18+row_index*22.32)
+                self.text(rows,LEFT,y+12,COLUMN,18,padding=34)
+                y+=height+12
+        y=quote_top
+        for unit,height in zip(quotes,quote_heights):self.quotation(unit,y);y+=height+10
+        # Validate all semantic block rectangles, including comparison columns and nodes.
+        for i,(x,y,w,h,name) in enumerate(self.blocks):
+            assert x>=LEFT and x+w<=LEFT+COLUMN+.01 and y+h<=TEXT_BOTTOM+.01
+            for xx,yy,ww,hh,other in self.blocks[i+1:]:
+                overlap=min(x+w,xx+ww)-max(x,xx)>.01 and min(y+h,yy+hh)-max(y,yy)>.01
+                assert not overlap,('Blocks overlap',name,other)
         # Explicit full-width, borderless final overlay. No page numbers are generated.
         mask=self.box(0,7*72,13.333*72,.5*72,BG,name='Bottom page-number mask')
         mask.left=Inches(0);mask.top=Inches(7);mask.width=Inches(13.333);mask.height=Inches(.5)
@@ -235,7 +359,7 @@ def validate(output,slides,source):
         for shape in list(page.shapes)[:-1]:assert shape.left>=Inches(4.5)
         cards=[s for s in page.shapes if s.name=='Teaching card']
         quotes=[s for s in page.shapes if s.name=='Quote']
-        for card in cards+quotes:
+        for card in cards:
             assert (card.left,card.width)==(Inches(4.5),Inches(8.3))
         for card in cards:
             for quote in quotes:assert card.top+card.height<quote.top
@@ -251,7 +375,7 @@ def validate(output,slides,source):
         for bounds in (fitz.Rect(0,0,324,540),fitz.Rect(0,504,PAGE_W,540)):
             pix=page.get_pixmap(clip=bounds,alpha=False)
             assert pix.samples==bytes(BG)*pix.width*pix.height
-    print(f'Validated {len(slides)} text-only slides: 8.3-inch cards; no images; no quote overlaps; blank video zone; final masks verified.',flush=True)
+    print(f'Validated {len(slides)} vector-infographic slides: no images; no overlaps; blank video zone; final masks verified.',flush=True)
 
 
 def publish(home,output):
@@ -259,7 +383,7 @@ def publish(home,output):
     names=[NAME+'.pptx',NAME+'.pdf','generate_lesson.py','lesson_content.json','requirements-lesson.txt','.gitignore','README.md']
     subprocess.run(['git','add','--',*names],cwd=home,check=True)
     state=subprocess.run(['git','diff','--cached','--quiet'],cwd=home).returncode
-    if state==1:subprocess.run(['git','commit','-m','Remove all imagery and image APIs; use spacious text-only 8.3-inch cards'],cwd=home,check=True)
+    if state==1:subprocess.run(['git','commit','-m','Add adaptive vector infographics, comparison columns and logical chains'],cwd=home,check=True)
     elif state:raise RuntimeError('Cannot inspect the staged files.')
     subprocess.run(['git','push','origin','HEAD:main'],cwd=home,check=True)
     local=subprocess.check_output(['git','rev-parse','HEAD'],cwd=home,text=True).strip()
@@ -290,6 +414,8 @@ def main():
         deck.page(slide)
         print(f'Rendered text slide {index}/{len(slides)}',flush=True)
     deck.finish();validate(args.output_dir,slides,source)
+    from collections import Counter
+    print('Automatic layouts:',dict(Counter(deck.layouts)),flush=True)
     if args.push:publish(home,args.output_dir)
 
 if __name__=='__main__':main()
