@@ -1,389 +1,266 @@
 #!/usr/bin/env python3
-"""Premium teaching lesson. Python 3.10+.
-Install: python -m pip install -r requirements-lesson.txt
-Generate: python generate_lesson.py
-Generate, commit and push: python generate_lesson.py --push
-Georgia/Arial are fetched if not provided through --fonts-dir.
-All source narration is kept verbatim in contiguous per-slide Notes.
+"""Clean slide generator: JSON narration -> editable PPTX + matching PDF.
+
+python -m pip install -r requirements-lesson.txt
+python generate_lesson.py --fonts-dir /path/to/fonts
+python generate_lesson.py --fonts-dir /path/to/fonts --push
+The push uses an explicit lease and never replaces unseen remote commits.
 """
-DATA = [{'title': 'Ваш Кристалл\nнезабываемости',
-  'cards': ['Есть красивые женщины. Есть умные.', 'Есть сексуальные. Есть интересные.'],
-  'quote': 'А есть незабываемые.',
-  'notes': 'Вводный блок\n'
-           '«Ваш Кристалл незабываемости»\n'
-           'Почему одних женщин забывают, а других — нет?\n'
-           '\n'
-           'Есть красивые женщины. Есть умные. Есть сексуальные. Есть интересные.\n'
-           'А есть незабываемые.'},
- {'title': 'Незабываемая женщина',
-  'cards': ['незабываемая — это не обязательно самая красивая женщина в комнате.',
-            'Не самая молодая. Не самая сексуальная.',
-            'И даже не самая интересная в привычном понимании.'],
-  'notes': 'И первое, что я хочу, чтобы вы поняли: незабываемая — это не обязательно самая красивая женщина '
-           'в комнате.\n'
-           'Не самая молодая. Не самая сексуальная.\n'
-           'И даже не самая интересная в привычном понимании.\n'
-           'Вы наверняка встречали женщин, которые вроде бы ничем невероятным не выделяются, но мужчины '
-           'почему-то очень сильно на них западают.'},
- {'title': 'Почему?',
-  'cards': ['сначала интерес', 'потом привыкание', 'потом охлаждение.'],
-  'quote': '«хорошая женщина» и «незабываемая женщина» — не одно и то же.',
-  'notes': 'И наоборот: потрясающая женщина — красивая, умная, успешная — а отношения с мужчинами почему-то '
-           'постоянно заканчиваются одним и тем же: сначала интерес, потом привыкание, потом охлаждение.\n'
-           'Почему?\n'
-           'Потому что «хорошая женщина» и «незабываемая женщина» — не одно и то же.'},
- {'title': 'Мужчина запоминает\nне только вас',
-  'cards': ['Он может забыть ресторан.', 'Он может даже забыть какие-то ваши слова.'],
-  'quote': 'Он запоминает себя рядом с вами.',
-  'notes': 'Мужчина запоминает не только вас\n'
-           'Он запоминает себя рядом с вами.\n'
-           'И это одна из главных мыслей всей программы.\n'
-           'Через несколько лет мужчина может забыть, в каком платье вы пришли на свидание.\n'
-           'Он может забыть ресторан. Он может даже забыть какие-то ваши слова.\n'
-           'Но он гораздо дольше способен помнить: как ему было рядом с вами.'},
- {'title': 'Каким он себя чувствовал.',
-  'cards': ['Было ли ему легко? Интересно?',
-            'Хотелось ли ему становиться сильнее? Чувствовал ли он себя мужчиной?',
-            'Смеялся ли? Удивлялся? Восхищался?'],
-  'notes': 'Каким он себя чувствовал. Было ли ему легко? Интересно?\n'
-           'Хотелось ли ему становиться сильнее? Чувствовал ли он себя мужчиной?\n'
-           'Смеялся ли? Удивлялся? Восхищался?'},
- {'title': 'Научиться оставлять следы.',
-  'cards': ['Наша задача гораздо интереснее.', 'Научиться оставлять следы.'],
-  'quote': 'И поэтому наша задача — не научиться «правильно вести себя с мужчиной».',
-  'notes': 'И поэтому наша задача — не научиться «правильно вести себя с мужчиной».\n'
-           'Наша задача гораздо интереснее. Научиться оставлять следы.'},
- {'title': 'Как возникает\nнезабываемость',
-  'cards': ['ГРАНЬ → СОПРИКОСНОВЕНИЕ', '→ СЛЕД → ПАМЯТЬ', '→ НЕЗАБЫВАЕМОСТЬ'],
-  'accent_all': True,
-  'notes': 'Как возникает незабываемость\n'
-           'Сразу же покажу вам нашу главную формулу незабываемости.\n'
-           'ГРАНЬ → СОПРИКОСНОВЕНИЕ → СЛЕД → ПАМЯТЬ → НЕЗАБЫВАЕМОСТЬ\n'
-           'У каждой женщины есть разные грани.\n'
-           'И когда какая-то ваша грань соприкасается с мужчиной, она оставляет след.'},
- {'title': 'Встреча закончилась.\nА лёгкость осталась.',
-  'cards': ['Например, вы умеете создавать невероятную лёгкость.',
-            'Вы встретились — посмеялись, поговорили, разошлись.'],
-  'quote': 'Это след.',
-  'notes': 'Например, вы умеете создавать невероятную лёгкость. Вы встретились — посмеялись, поговорили, '
-           'разошлись.\n'
-           'Встреча закончилась. А лёгкость осталась.\n'
-           'Это след.'},
- {'title': 'Память о вас',
-  'cards': ['Мужчина вспоминает вас — и вместе с вашим образом возвращается это ощущение.',
-            'А когда таких следов становится много,'],
-  'quote': 'появляется то, что я называю эффектом незабываемости.',
-  'notes': 'Проходит несколько дней. Мужчина вспоминает вас — и вместе с вашим образом возвращается это '
-           'ощущение.\n'
-           'Так появляется память о вас. А когда таких следов становится много, появляется то, что я называю '
-           'эффектом незабываемости.'},
- {'title': 'Одна грань — один след',
-  'table': [['Лёгкость', 'след лёгкости'],
-            ['Вдохновение', 'след вдохновения'],
-            ['Интеллект', 'интеллектуальный след'],
-            ['Индивидуальность', 'след уникальности']],
-  'notes': 'Одна грань — один след\n'
-           'Например\n'
-           'Лёгкость → след лёгкости, Вдохновение → след вдохновения\n'
-           'Интеллект → интеллектуальный след, Индивидуальность → след уникальности'},
- {'title': 'Почему одной красоты\nнедостаточно.',
-  'table': [['Эстетика', 'эстетический след'],
-            ['Достоинство', 'след уважения'],
-            ['Контраст', 'след новизны']],
-  'quote': 'Красота тоже способна оставить след. Но это один след.',
-  'notes': 'Эстетика → эстетический след, Достоинство → след уважения\n'
-           'Контраст → след новизны\n'
-           'И вот теперь становится понятно, почему одной красоты недостаточно.\n'
-           'Красота тоже способна оставить след. Но это один след.'},
- {'title': 'Совершенно другой\nобъём впечатления.',
-  'cards': ['восхищение, интерес, лёгкость,',
-            'уважение, любопытство, вдохновение, тепло,',
-            'яркое воспоминание.'],
-  'notes': 'А теперь представьте женщину, после которой мужчина одновременно уносит:\n'
-           'восхищение, интерес, лёгкость, уважение, любопытство, вдохновение, тепло,\n'
-           'яркое воспоминание.\n'
-           'Это уже совершенно другой объём впечатления.'},
- {'title': 'Закон многогранности',
-  'cards': ['Незабываемость редко создаётся одной суперспособностью.', 'Она создаётся комбинацией.'],
-  'quote': 'Чем больше раскрытых граней — тем объёмнее образ женщины.',
-  'notes': 'Закон многогранности\n'
-           'Чем больше раскрытых граней — тем объёмнее образ женщины.\n'
-           'И это второй важнейший принцип нашей программы.\n'
-           'Незабываемость редко создаётся одной суперспособностью.\n'
-           'Она создаётся комбинацией.'},
- {'title': 'Только одна грань',
-  'cards': ['если женщина только красивая — мужчина достаточно быстро привыкает к красоте.',
-            'Если она только лёгкая — прекрасно, но этого может быть мало.',
-            'Только умная — тоже одна грань.'],
-  'notes': 'Потому что если женщина только красивая — мужчина достаточно быстро привыкает к красоте.\n'
-           'Если она только лёгкая — прекрасно, но этого может быть мало. Только умная — тоже одна грань.'},
- {'title': 'Она создаётся комбинацией.',
-  'cards': ['она лёгкая, но глубокая.',
-            'Нежная, но с характером.',
-            'Женственная, но со своим миром.',
-            'Спокойная, но иногда совершенно неожиданная.'],
-  'notes': 'А теперь представьте: она лёгкая, но глубокая. Нежная, но с характером.\n'
-           'Женственная, но со своим миром. Спокойная, но иногда совершенно неожиданная.'},
- {'title': 'Невозможно поместить\nв одну категорию',
-  'cards': ['С ней можно смеяться',
-            'и через двадцать минут разговаривать о вещах, о которых мужчина почти ни с кем не говорит.'],
-  'quote': 'Вот такую женщину уже невозможно поместить в одну категорию.',
-  'notes': 'С ней можно смеяться — и через двадцать минут разговаривать о вещах, о которых мужчина почти ни '
-           'с кем не говорит.\n'
-           'Вот такую женщину уже невозможно поместить в одну категорию.'}]
-
-PHOTO_PROMPTS = {
-    1: 'Luxury editorial portrait of a confident woman aged 42, black silk, natural skin, graphite interior, soft champagne rim light, refined quiet presence, no text --ar 16:9 --style raw',
-    4: 'Elegant mature couple sharing a warm knowing glance in a quiet luxury lounge, authentic emotion, graphite and champagne palette, cinematic soft light, no text --ar 16:9 --style raw',
-    8: 'Two crystal glasses on a dark stone table after an intimate conversation, delicate golden light reflections lingering on graphite silk, poetic luxury still life, no text --ar 16:9 --style raw',
-    12: 'A clear multifaceted crystal casting layered champagne light onto matte graphite stone, rich subtle reflections, sculptural luxury still life, editorial photography, no text --ar 16:9 --style raw',
-}
-for number,prompt in PHOTO_PROMPTS.items():
-    DATA[number-1]['photo_prompt']=prompt
-
+from __future__ import annotations
 import argparse
-from pathlib import Path
-import subprocess
+from dataclasses import dataclass
 import hashlib
-import urllib.request
+import json
+from pathlib import Path
 import re
+import subprocess
+from urllib.request import urlopen
 
 from pptx import Presentation
-from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
-from pptx.enum.shapes import MSO_SHAPE, MSO_CONNECTOR
+from pptx.enum.shapes import MSO_CONNECTOR, MSO_SHAPE
 from pptx.oxml.xmlchemy import OxmlElement
-from reportlab.pdfgen import canvas
+from pptx.util import Inches, Pt
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.pdfgen import canvas
 
-NAME = 'Ваш Кристалл незабываемости'
-BG = (26,26,26)
-CARD = (40,40,40)
-GOLD = (212,175,55)
-WHITE = (255,255,255)
-X, WIDTH = 4.5*72, 8.0*72
-PAGE_W, PAGE_H = 13.333*72, 7.5*72
-FONT_URLS = {
- 'georgia.ttf': 'https://raw.githubusercontent.com/justrajdeep/fonts/master/Georgia.ttf',
- 'georgiai.ttf': 'https://raw.githubusercontent.com/justrajdeep/fonts/master/Georgia%20Italic.ttf',
- 'arial.ttf': 'https://raw.githubusercontent.com/justrajdeep/fonts/master/Arial.ttf',
-}
+TITLE = 'Ваш Кристалл незабываемости'
+BACKGROUND = (26, 26, 26)
+PANEL = (40, 40, 40)
+GOLD = (212, 175, 55)
+WHITE = (255, 255, 255)
+PAGE_WIDTH, PAGE_HEIGHT = 13.333 * 72, 7.5 * 72
+CONTENT_LEFT, CONTENT_WIDTH = 4.5 * 72, 8.0 * 72
+SOURCE_HASH = '618f688756018c7010acb9c11e7ecc09340c80c0537e3d2ecc10cba238f96ef4'
+KEYWORDS = re.compile(r'(\b(?:следы|след|лёгкость|память|уважение|вдохновение|комбинацией|незабываемая|незабываемые)\b)', re.I)
 
-def fonts(directory):
-    directory.mkdir(parents=True,exist_ok=True)
-    for filename,url in FONT_URLS.items():
-        path=directory/filename
-        if not path.is_file():
-            with urllib.request.urlopen(url,timeout=45) as response:
-                data=response.read()
-            path.write_bytes(data)
-    for face,filename in [('Georgia','georgia.ttf'),('GeorgiaItalic','georgiai.ttf'),('Arial','arial.ttf')]:
-        pdfmetrics.registerFont(TTFont(face,str(directory/filename)))
-        from fontTools.ttLib import TTFont as FontToolsFont
-        cmap=FontToolsFont(directory/filename).getBestCmap()
-        assert all(ord(char) in cmap for char in 'Кристалл незабываемости'), face
+@dataclass
+class Element:
+    kind: str
+    x: float
+    y: float
+    width: float
+    height: float
+    name: str
+    text: str = ''
+    font: str = 'Arial'
+    size: int = 18
+    color: tuple = WHITE
+    fill: tuple = BACKGROUND
+    stroke: tuple | None = None
+    weight: float = .5
+    opacity: float = 1.0
+    inset: float = 0.0
 
-def wrap(text,face,size,width):
-    lines=[]
+
+def prepare_fonts(directory: Path):
+    directory.mkdir(parents=True, exist_ok=True)
+    files = {'Georgia': 'georgia.ttf', 'GeorgiaItalic': 'georgiai.ttf', 'Arial': 'arial.ttf'}
+    remote = {'Georgia': 'Georgia.ttf', 'GeorgiaItalic': 'Georgia%20Italic.ttf', 'Arial': 'Arial.ttf'}
+    for family, filename in files.items():
+        local = directory / filename
+        if not local.exists():
+            url = 'https://raw.githubusercontent.com/justrajdeep/fonts/master/' + remote[family]
+            with urlopen(url, timeout=40) as response:
+                local.write_bytes(response.read())
+        pdfmetrics.registerFont(TTFont(family, str(local)))
+
+
+def linebreaks(text, font, size, available):
+    result = []
     for paragraph in text.split('\n'):
-        line=''
+        current = ''
         for word in paragraph.split():
-            test=(line+' '+word).strip()
-            if pdfmetrics.stringWidth(test,face,size)>width and line:
-                lines.append(line);line=word
-            else:line=test
-        lines.append(line)
-    assert all(pdfmetrics.stringWidth(line,face,size)<=width for line in lines)
-    return lines
+            candidate = (current + ' ' + word).strip()
+            if current and pdfmetrics.stringWidth(candidate, font, size) > available:
+                result.append(current)
+                current = word
+            else:
+                current = candidate
+        result.append(current)
+    assert all(pdfmetrics.stringWidth(t, font, size) <= available for t in result)
+    return result
 
-def rgb(c):return RGBColor(*c)
-def pdf_color(c):return tuple(channel/255 for channel in c)
 
-class Renderer:
-    def __init__(self,output):
-        self.prs=Presentation()
-        # Exact user-specified widescreen dimensions.
-        self.prs.slide_width=Inches(13.333)
-        self.prs.slide_height=Inches(7.5)
-        self.prs.core_properties.title=NAME+' — обучающий урок'
-        self.prs.core_properties.language='ru-RU'
-        self.pdf=canvas.Canvas(str(output/(NAME+'.pdf')),pagesize=(PAGE_W,PAGE_H))
-        self.pdf.setTitle(NAME+' — обучающий урок')
-        self.output=output
+def compose(item):
+    elements = []
+    def put(kind, x, y, w, h, name, **style):
+        elements.append(Element(kind, x, y, w, h, name, **style))
+    def label(value, y, size=18, font='Arial', color=WHITE, inset=2):
+        rows = linebreaks(value, font, size, CONTENT_WIDTH - 2 * inset)
+        put('text', CONTENT_LEFT, y, CONTENT_WIDTH, len(rows)*size*1.24+4,
+            'Text', text='\n'.join(rows), font=font, size=size, color=color)
+        # The text box remains exactly eight inches wide; inset is an internal margin.
+        elements[-1].inset = inset
+        return len(rows)*size*1.24
+    # Texture remains on the right; the divider at 4.3 inches is an explicit exception.
+    points = [(833,428), (900,397), (946,447), (928,493), (866,499), (821,479)]
+    for a,b in list(zip(points,points[1:]+points[:1])) + [(points[0],points[2]),(points[1],points[3]),(points[2],points[5])]:
+        put('line', a[0],a[1],b[0]-a[0],b[1]-a[1], 'Crystal texture', color=GOLD, weight=.3, opacity=.10)
+    put('line', 4.3*72, 1.0*72, 0, 5.5*72, 'Video divider', color=GOLD, weight=.65)
+    heading_height = label(item['title'], 36, 34, 'Georgia', GOLD)
+    assert heading_height <= 34*1.24*2
+    y = max(145, 36+heading_height+24)
+    for number, text in enumerate(item.get('cards', []), 1):
+        rows = linebreaks(text,'Arial',18,CONTENT_WIDTH-48)
+        assert len(rows) <= 3, 'Split narration into another slide; never reduce its font.'
+        height = len(rows)*18*1.24+24
+        put('rect',CONTENT_LEFT,y,CONTENT_WIDTH,height,f'Card {number}',fill=PANEL,stroke=GOLD,weight=.5)
+        put('diamond',CONTENT_LEFT+12,y+17,4,4,'Gold bullet',fill=GOLD)
+        label('\n'.join(rows),y+11,color=GOLD if item.get('accent_all') else WHITE,inset=24)
+        y += height+10
+    for number, (left,right) in enumerate(item.get('table', []), 1):
+        put('rect',CONTENT_LEFT,y,CONTENT_WIDTH,57,f'Card table {number}',fill=PANEL,stroke=GOLD,weight=.5)
+        label(left,y+17,color=GOLD,inset=14)
+        # Independent internal text cell; the enclosing content block is eight inches wide.
+        put('text',CONTENT_LEFT+226,y+17,CONTENT_WIDTH-240,28,'Table value',text='→ '+right)
+        elements[-1].inset = 0
+        put('line',CONTENT_LEFT+200,y+12,0,33,'Table separator',color=GOLD,opacity=.45)
+        y += 67
+    if item.get('quote'):
+        y += 8
+        rows = linebreaks(item['quote'],'GeorgiaItalic',18,CONTENT_WIDTH-28)
+        height = len(rows)*18*1.24+24
+        put('rect',CONTENT_LEFT+.5,y,CONTENT_WIDTH-1,height,'Author quote',stroke=GOLD,weight=.75)
+        label('\n'.join(rows),y+11,18,'GeorgiaItalic',GOLD,14)
+        y += height
+    if item.get('photo_prompt'):
+        y = max(352,y+16)
+        rows = linebreaks(item['photo_prompt'],'Arial',16,CONTENT_WIDTH-28)
+        height = 58+len(rows)*16*1.24
+        assert y+height <= 501, 'Photo instructions must stay above the bottom mask.'
+        put('rect',CONTENT_LEFT+.5,y,CONTENT_WIDTH-1,height,'Photo prompt container',stroke=GOLD,weight=.65)
+        label('ПРОМПТ ДЛЯ MIDJOURNEY',y+12,16,color=GOLD,inset=14)
+        label('\n'.join(rows),y+43,16,inset=14)
+    assert len(item.get('cards',item.get('table',[]))) <= 4
+    assert all(e.y+e.height <= 504 for e in elements if e.kind != 'line')
+    # LAST ELEMENT: masks the full bottom 0.5 inches, including any inherited footer.
+    put('rect',0,7.0*72,13.333*72,.5*72,'Bottom page-number mask',fill=BACKGROUND)
+    return elements
 
-    def rectangle(self,y,height,quote=False):
-        sh=self.slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(4.5), Inches(y/72), Inches(8.0), Inches(height/72))
-        sh.fill.solid();sh.fill.fore_color.rgb=rgb(BG if quote else CARD)
-        if quote:
-            sh.left=Inches(4.5)+Pt(.5);sh.width=Inches(8.0)-Pt(1)
-            sh.line.color.rgb=rgb(GOLD);sh.line.width=Pt(.75)
-        else:sh.line.fill.background()
-        self.pdf.setFillColorRGB(*pdf_color(BG if quote else CARD))
-        self.pdf.setStrokeColorRGB(*pdf_color(GOLD));self.pdf.setLineWidth(.75)
-        self.pdf.rect(X+(.5 if quote else 0),PAGE_H-y-height,WIDTH-(1 if quote else 0),height,fill=1,stroke=int(quote))
 
-    def hairline(self,x1,y1,x2,y2,alpha=.20,width=.5):
-        sh=self.slide.shapes.add_connector(MSO_CONNECTOR.STRAIGHT,Pt(x1),Pt(y1),Pt(x2),Pt(y2))
-        sh.line.color.rgb=rgb(GOLD);sh.line.width=Pt(width)
-        solid=sh.line._get_or_add_ln().find('{http://schemas.openxmlformats.org/drawingml/2006/main}solidFill')
-        opacity=OxmlElement('a:alpha');opacity.set('val',str(int(alpha*100000)))
-        solid[0].append(opacity)
-        self.pdf.saveState();self.pdf.setStrokeAlpha(alpha)
-        self.pdf.setStrokeColorRGB(*pdf_color(GOLD));self.pdf.setLineWidth(width)
-        self.pdf.line(x1,PAGE_H-y1,x2,PAGE_H-y2);self.pdf.restoreState()
+def draw_slide(prs, document, item, elements):
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    slide.background.fill.solid()
+    slide.background.fill.fore_color.rgb = RGBColor(*BACKGROUND)
+    document.setFillColorRGB(*(v/255 for v in BACKGROUND))
+    document.rect(0,0,PAGE_WIDTH,PAGE_HEIGHT,fill=1,stroke=0)
+    for e in elements:
+        document.saveState()
+        document.setFillAlpha(e.opacity);document.setStrokeAlpha(e.opacity)
+        if e.kind == 'text':
+            inset = getattr(e,'inset',0)
+            box = slide.shapes.add_textbox(Pt(e.x),Pt(e.y),Pt(e.width),Pt(e.height))
+            frame=box.text_frame;frame.word_wrap=False
+            frame.margin_left=frame.margin_right=Pt(inset)
+            frame.margin_top=frame.margin_bottom=Pt(0)
+            for i,row in enumerate(e.text.split('\n')):
+                paragraph=frame.paragraphs[0] if i==0 else frame.add_paragraph()
+                paragraph.font.name='Georgia' if e.font.startswith('Georgia') else 'Arial'
+                paragraph.font.size=Pt(e.size);paragraph.font.italic=e.font.endswith('Italic')
+                paragraph.space_before=paragraph.space_after=Pt(0)
+                paragraph.line_spacing=Pt(e.size*1.24)
+                cursor=e.x+inset
+                parts=KEYWORDS.split(row) if e.font=='Arial' and e.color==WHITE else [row]
+                for part in filter(None,parts):
+                    shade=GOLD if KEYWORDS.fullmatch(part) else e.color
+                    run=paragraph.add_run();run.text=part;run.font.color.rgb=RGBColor(*shade)
+                    document.setFont(e.font,e.size);document.setFillColorRGB(*(v/255 for v in shade))
+                    baseline=PAGE_HEIGHT-e.y-pdfmetrics.getAscent(e.font)*e.size/1000-i*e.size*1.24
+                    document.drawString(cursor,baseline,part)
+                    cursor+=pdfmetrics.stringWidth(part,e.font,e.size)
+        elif e.kind == 'line':
+            box=slide.shapes.add_connector(MSO_CONNECTOR.STRAIGHT,Pt(e.x),Pt(e.y),Pt(e.x+e.width),Pt(e.y+e.height))
+            if e.name=='Video divider':
+                box.left=Inches(4.3);box.top=Inches(1.0);box.width=Inches(0);box.height=Inches(5.5)
+            box.line.color.rgb=RGBColor(*e.color);box.line.width=Pt(e.weight)
+            if e.opacity<1:
+                solid=box.line._get_or_add_ln().find('{http://schemas.openxmlformats.org/drawingml/2006/main}solidFill')
+                alpha=OxmlElement('a:alpha');alpha.set('val',str(int(e.opacity*100000)));solid[0].append(alpha)
+            document.setStrokeColorRGB(*(v/255 for v in e.color));document.setLineWidth(e.weight)
+            document.line(e.x,PAGE_HEIGHT-e.y,e.x+e.width,PAGE_HEIGHT-e.y-e.height)
+        else:
+            kind=MSO_SHAPE.DIAMOND if e.kind=='diamond' else MSO_SHAPE.RECTANGLE
+            box=slide.shapes.add_shape(kind,Pt(e.x),Pt(e.y),Pt(e.width),Pt(e.height))
+            box.fill.solid();box.fill.fore_color.rgb=RGBColor(*e.fill)
+            if e.stroke:
+                box.line.color.rgb=RGBColor(*e.stroke);box.line.width=Pt(e.weight)
+            else:box.line.fill.background()
+            document.setFillColorRGB(*(v/255 for v in e.fill))
+            if e.stroke:
+                document.setStrokeColorRGB(*(v/255 for v in e.stroke));document.setLineWidth(e.weight)
+            if e.kind=='diamond':
+                path=document.beginPath();cx=e.x+e.width/2;cy=PAGE_HEIGHT-e.y-e.height/2
+                path.moveTo(cx,cy+2);path.lineTo(cx+2,cy);path.lineTo(cx,cy-2);path.lineTo(cx-2,cy);path.close()
+                document.drawPath(path,fill=1,stroke=0)
+            else:document.rect(e.x,PAGE_HEIGHT-e.y-e.height,e.width,e.height,fill=1,stroke=int(bool(e.stroke)))
+        box.name=e.name
+        document.restoreState()
+    slide.notes_slide.notes_text_frame.text=item['notes']
+    document.showPage()
 
-    def texture(self):
-        # Delicate crystal facets ONLY to the right of the reserved video area.
-        vertices=[(835,430),(901,400),(946,446),(928,511),(866,531),(821,484)]
-        for a,b in zip(vertices,vertices[1:]+vertices[:1]):self.hairline(*a,*b,alpha=.10,width=.35)
-        for i,j in [(0,2),(0,4),(1,3),(2,5),(3,5)]:
-            self.hairline(*vertices[i],*vertices[j],alpha=.08,width=.3)
-        for coords in [(627,10,943,31),(739,10,943,67),(698,10,943,47)]:
-            self.hairline(*coords,alpha=.08,width=.3)
 
-    def diamond(self,y):
-        size=4
-        sh=self.slide.shapes.add_shape(MSO_SHAPE.DIAMOND,Pt(X+12),Pt(y),Pt(size),Pt(size))
-        sh.fill.solid();sh.fill.fore_color.rgb=rgb(GOLD);sh.line.fill.background()
-        path=self.pdf.beginPath();xx=X+14;yy=PAGE_H-y-2
-        path.moveTo(xx,yy+2);path.lineTo(xx+2,yy);path.lineTo(xx,yy-2);path.lineTo(xx-2,yy);path.close()
-        self.pdf.setFillColorRGB(*pdf_color(GOLD));self.pdf.drawPath(path,fill=1,stroke=0)
-
-    def text(self,lines,y,size=18,face='Arial',color=WHITE,padding=2):
-        leading=size*1.24
-        box=self.slide.shapes.add_textbox(Inches(4.5),Inches(y/72), Inches(8.0), Inches((len(lines)*leading+8)/72))
-        tf=box.text_frame;tf.word_wrap=False
-        tf.margin_left=tf.margin_right=Pt(padding);tf.margin_top=tf.margin_bottom=Pt(0)
-        asc=pdfmetrics.getAscent(face)*size/1000
-        pattern=r'(\b(?:незабываемая|незабываемые|следы|след|комбинацией|лёгкость|память|уважение|вдохновение|уникальности)\b)'
-        for i,value in enumerate(lines):
-            p=tf.paragraphs[0] if i==0 else tf.add_paragraph()
-            p.font.name='Georgia' if face.startswith('Georgia') else 'Arial'
-            p.font.italic=face=='GeorgiaItalic';p.font.size=Pt(size);p.font.color.rgb=rgb(color)
-            p.space_before=p.space_after=Pt(0);p.line_spacing=Pt(leading)
-            parts=re.split(pattern,value,flags=re.I) if color==WHITE and face=='Arial' else [value]
-            xx=X+padding
-            for part in parts:
-                if not part:continue
-                fill=GOLD if re.fullmatch(pattern,part,flags=re.I) else color
-                run=p.add_run();run.text=part;run.font.color.rgb=rgb(fill)
-                self.pdf.setFont(face,size);self.pdf.setFillColorRGB(*pdf_color(fill))
-                self.pdf.drawString(xx,PAGE_H-y-asc-i*leading,part)
-                xx+=pdfmetrics.stringWidth(part,face,size)
-
-    def photo_prompt(self,y,prompt):
-        lines=wrap(prompt,'Arial',16,WIDTH-28)
-        height=58+len(lines)*16*1.24
-        assert y+height<=524,('Photo prompt overflows',y,height)
-        self.rectangle(y,height,quote=True)
-        self.text(['ПРОМПТ ДЛЯ MIDJOURNEY'],y+12,16,color=GOLD,padding=14)
-        self.text(lines,y+43,16,padding=14)
-
-    def table_row(self,y,left,right):
-        self.rectangle(y,57)
-        box=self.slide.shapes.add_textbox(Inches(4.5),Inches((y+17)/72),Inches(8.0),Inches(31/72))
-        tf=box.text_frame;tf.margin_left=tf.margin_right=Pt(14);tf.margin_top=tf.margin_bottom=Pt(0)
-        p=tf.paragraphs[0];p.font.name='Arial';p.font.size=Pt(18)
-        tabs=OxmlElement('a:tabLst');tab=OxmlElement('a:tab')
-        tab.set('pos',str(Inches(2.95)));tab.set('algn','l');tabs.append(tab)
-        p._p.get_or_add_pPr().append(tabs)
-        for value,c in [(left+'\t',GOLD),('→ '+right,WHITE)]:
-            run=p.add_run();run.text=value;run.font.name='Arial';run.font.size=Pt(18);run.font.color.rgb=rgb(c)
-        self.hairline(X+200,y+12,X+200,y+45,alpha=.35)
-        for xx,value,c in [(X+14,left,GOLD),(X+14+2.95*72,'→ '+right,WHITE)]:
-            assert xx+pdfmetrics.stringWidth(value,'Arial',18)<=X+WIDTH-14
-            self.pdf.setFont('Arial',18);self.pdf.setFillColorRGB(*pdf_color(c))
-            self.pdf.drawString(xx,PAGE_H-y-17-pdfmetrics.getAscent('Arial')*18/1000,value)
-
-    def render(self,data,index,total):
-        assert data['notes'].strip()
-        assert len(data.get('cards',data.get('table',[])))<=4
-        self.slide=self.prs.slides.add_slide(self.prs.slide_layouts[6])
-        self.slide.background.fill.solid();self.slide.background.fill.fore_color.rgb=rgb(BG)
-        self.pdf.setFillColorRGB(*pdf_color(BG));self.pdf.rect(0,0,PAGE_W,PAGE_H,fill=1,stroke=0)
-        self.texture()
-        title=wrap(data['title'],'Georgia',34,WIDTH-4)
-        assert len(title)<=2
-        self.text(title,36,34,'Georgia',GOLD)
-        y=max(145,36+len(title)*34*1.24+24)
-        for card in data.get('cards',[]):
-            lines=wrap(card,'Arial',18,WIDTH-48)
-            height=len(lines)*18*1.24+24
-            assert len(lines)<=3,'Split into another teaching slide instead of reducing font size.'
-            self.rectangle(y,height)
-            self.hairline(X+1.5,y+8,X+1.5,y+height-8,alpha=.38,width=.5)
-            self.diamond(y+17)
-            self.text(lines,y+11,18,color=GOLD if data.get('accent_all') else WHITE,padding=24)
-            y+=height+10
-        for left,right in data.get('table',[]):
-            self.table_row(y,left,right);y+=67
-        if data.get('quote'):
-            y+=8
-            lines=wrap(data['quote'],'GeorgiaItalic',18,WIDTH-28)
-            height=len(lines)*18*1.24+24
-            self.rectangle(y,height,quote=True)
-            self.text(lines,y+11,18,'GeorgiaItalic',GOLD,14)
-            y+=height
-        assert y<=490,(index,y,'Split content; never shrink fonts.')
-        if data.get('photo_prompt'):
-            self.photo_prompt(max(352,y+16),data['photo_prompt'])
-        self.slide.notes_slide.notes_text_frame.text=data['notes']
-        self.pdf.showPage()
-
-    def save(self):
-        self.prs.save(self.output/(NAME+'.pptx'));self.pdf.save()
-
-def validate(output):
+def verify(output, content):
     import fitz
-    prs=Presentation(output/(NAME+'.pptx'))
-    assert prs.slide_width==Inches(13.333) and prs.slide_height==Inches(7.5)
-    assert len(prs.slides)==len(DATA)
-    lecture=' '.join(' '.join(item['notes'].split()) for item in DATA)
-    assert hashlib.sha256(lecture.encode('utf-8')).hexdigest()=='618f688756018c7010acb9c11e7ecc09340c80c0537e3d2ecc10cba238f96ef4'
-    for slide,data in zip(prs.slides,DATA):
-        assert slide.notes_slide.notes_text_frame.text==data['notes']
+    deck=Presentation(output/(TITLE+'.pptx'))
+    assert len(deck.slides)==len(content)==16
+    merged=' '.join(' '.join(d['notes'].split()) for d in content)
+    assert hashlib.sha256(merged.encode()).hexdigest()==SOURCE_HASH
+    for slide,item in zip(deck.slides,content):
+        assert slide.notes_slide.notes_text_frame.text==item['notes']
+        mask=slide.shapes[-1]
+        assert mask.name=='Bottom page-number mask'
+        assert (mask.left,mask.top,mask.width,mask.height)==(Inches(0),Inches(7),Inches(13.333),Inches(.5))
+        assert mask.fill.fore_color.rgb==RGBColor(*BACKGROUND)
+        divider=next(s for s in slide.shapes if s.name=='Video divider')
+        assert (divider.left,divider.top,divider.height)==(Inches(4.3),Inches(1),Inches(5.5))
         for shape in slide.shapes:
-            if shape.has_text_frame:
-                assert not re.fullmatch(r'\d{2} / \d{2}',shape.text.strip()), 'Page numbering must be disabled'
-            assert shape.left>=Inches(4.5)
+            if shape.name.startswith('Card'):
+                assert shape.fill.fore_color.rgb==RGBColor(*PANEL)
+                assert shape.line.color.rgb==RGBColor(*GOLD)
             if shape.has_text_frame and shape.text:
-                assert shape.width==Inches(8.0)
-                for p in shape.text_frame.paragraphs:
-                    for run in p.runs:
-                        assert (run.font.name or p.font.name) in ('Arial','Georgia')
-                        size=run.font.size or p.font.size
-                        assert size and size.pt in (16,18,34)
-    document=fitz.open(output/(NAME+'.pdf'))
-    assert len(document)==len(DATA)
-    for page in document:
-        pix=page.get_pixmap(matrix=fitz.Matrix(1,1),clip=fitz.Rect(0,0,X,PAGE_H),alpha=False)
-        assert pix.samples==bytes(BG)*(pix.width*pix.height),'Speaker area must be perfectly blank.'
-    print(f'Validated {len(DATA)} slides: no numbering, correct fonts, synchronized Notes, blank 4.5-inch speaker area, subtle right-side graphics.')
+                assert shape.left>=Inches(4.5)
+                assert not re.fullmatch(r'\d{2} / \d{2}',shape.text.strip())
+    pdf=fitz.open(output/(TITLE+'.pdf'))
+    assert len(pdf)==16
+    for page in pdf:
+        for area in (fitz.Rect(0,504,PAGE_WIDTH,540),fitz.Rect(0,0,308,540)):
+            pix=page.get_pixmap(clip=area,alpha=False)
+            assert pix.samples==bytes(BACKGROUND)*pix.width*pix.height
+    print('Verified: 16 slides; last-layer bottom masks; exact 4.3-inch dividers; framed cards; unchanged Notes.')
 
-def push(output):
-    names=[NAME+'.pptx',NAME+'.pdf','generate_lesson.py','requirements-lesson.txt']
-    subprocess.run(['git','add','--',*names],cwd=output,check=True)
-    changed=subprocess.run(['git','diff','--cached','--quiet'],cwd=output)
-    if changed.returncode==1:
-        subprocess.run(['git','commit','-m','Add subtle crystal graphics and Midjourney prompt containers; remove slide numbering'],cwd=output,check=True)
-    elif changed.returncode!=0:raise RuntimeError('Cannot inspect staged files')
-    subprocess.run(['git','push','origin','HEAD:main'],cwd=output,check=True)
-    local=subprocess.check_output(['git','rev-parse','HEAD'],cwd=output,text=True).strip()
+
+def publish(output):
+    tracked=[TITLE+'.pptx',TITLE+'.pdf','generate_lesson.py','lesson_content.json','requirements-lesson.txt']
+    expected=subprocess.check_output(['git','rev-parse','refs/remotes/origin/main'],cwd=output,text=True).strip()
+    subprocess.run(['git','add','--',*tracked],cwd=output,check=True)
+    if subprocess.run(['git','diff','--cached','--quiet'],cwd=output).returncode:
+        subprocess.run(['git','commit','-m','Replace generator from scratch; add footer masks, divider and framed cards'],cwd=output,check=True)
+    subprocess.run(['git','push','--force-with-lease=refs/heads/main:'+expected,'origin','HEAD:main'],cwd=output,check=True)
     remote=subprocess.check_output(['git','ls-remote','origin','refs/heads/main'],cwd=output,text=True).split()[0]
+    local=subprocess.check_output(['git','rev-parse','HEAD'],cwd=output,text=True).strip()
     assert local==remote
-    print('Push verified:',local)
+    print('Force-with-lease push verified:',local)
+
 
 def main():
-    parser=argparse.ArgumentParser(description='Generate a premium teaching lesson; optionally commit and push to main.')
-    parser.add_argument('--output-dir',type=Path,default=Path(__file__).resolve().parent)
-    parser.add_argument('--fonts-dir',type=Path,default=Path(__file__).resolve().parent/'work'/'fonts')
-    parser.add_argument('--push',action='store_true',help='Commit output files and this generator, then push origin main.')
-    args=parser.parse_args();args.output_dir.mkdir(parents=True,exist_ok=True)
-    fonts(args.fonts_dir)
-    renderer=Renderer(args.output_dir)
-    for i,slide in enumerate(DATA,1):renderer.render(slide,i,len(DATA))
-    renderer.save();validate(args.output_dir)
-    if args.push:push(args.output_dir)
+    home=Path(__file__).resolve().parent
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--output-dir',type=Path,default=home)
+    parser.add_argument('--fonts-dir',type=Path,default=home/'work'/'fonts')
+    parser.add_argument('--push',action='store_true')
+    args=parser.parse_args()
+    content=json.loads((home/'lesson_content.json').read_text(encoding='utf-8'))
+    args.output_dir.mkdir(parents=True,exist_ok=True)
+    prepare_fonts(args.fonts_dir)
+    prs=Presentation();prs.slide_width=Inches(13.333);prs.slide_height=Inches(7.5)
+    prs.core_properties.title=TITLE;prs.core_properties.language='ru-RU'
+    document=canvas.Canvas(str(args.output_dir/(TITLE+'.pdf')),pagesize=(PAGE_WIDTH,PAGE_HEIGHT))
+    document.setTitle(TITLE)
+    for item in content:draw_slide(prs,document,item,compose(item))
+    prs.save(args.output_dir/(TITLE+'.pptx'));document.save()
+    verify(args.output_dir,content)
+    if args.push:publish(args.output_dir)
 
 if __name__=='__main__':main()
